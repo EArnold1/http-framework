@@ -1,5 +1,6 @@
-use std::convert::Infallible;
+use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
 
 use http_body_util::{BodyExt, Empty, Full, combinators::BoxBody};
 use hyper::body::{Body, Bytes, Frame};
@@ -16,40 +17,44 @@ struct Player {
     name: String,
 }
 
-// Services
-//
+type BoxFutureResponse = Pin<
+    Box<dyn Future<Output = Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error>> + Send>,
+>;
 
-#[derive(Debug)]
-struct Route<'a> {
+type HandlerFn = Box<dyn Fn(Vec<u8>) -> BoxFutureResponse + Send + Sync>;
+
+struct Route {
     method: Method,
-    route: &'a str,
-    handler: fn(body: Vec<u8>) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error>,
+    route: String,
+    handler: HandlerFn,
 }
 
-impl<'a> Route<'a> {
-    fn new(
-        handler: fn(Vec<u8>) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error>,
-        method: Method,
-        route: &'a str,
-    ) -> Self {
+impl Route {
+    fn new<H, Fut>(method: Method, route: &str, handler: H) -> Self
+    where
+        H: Fn(Vec<u8>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error>>
+            + Send
+            + 'static,
+    {
         Self {
             method,
-            route,
-            handler,
+            route: route.into(),
+            handler: Box::new(move |body| Box::pin(handler(body))),
         }
     }
 }
 
-struct Service<'a> {
-    routes: Vec<Route<'a>>,
+struct Service {
+    routes: Vec<Route>,
 }
 
-impl<'a> Service<'a> {
+impl Service {
     fn new() -> Self {
         Self { routes: Vec::new() }
     }
 
-    fn route(&mut self, route: Route<'a>) {
+    fn route(&mut self, route: Route) {
         self.routes.push(route);
     }
 
@@ -73,7 +78,7 @@ impl<'a> Service<'a> {
         let body = req.collect().await?.to_bytes().to_vec();
 
         if let Some(route) = route {
-            return (route.handler)(body);
+            return (route.handler)(body).await;
         }
 
         let mut not_found = Response::new(empty());
@@ -86,7 +91,7 @@ async fn handler(
     req: Request<hyper::body::Incoming>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let mut router = Service::new();
-    router.route(Route::new(root, Method::GET, "/"));
+    router.route(Route::new(Method::GET, "/", index_route));
     // router.route(Method::POST, "/echo");
     // router.route(Method::POST, "/echo/uppercase");
     // router.route(Method::POST, "/echo/reversed");
@@ -94,7 +99,7 @@ async fn handler(
     router.make_service(req).await
 }
 
-fn root(_: Vec<u8>) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+async fn index_route(_: Vec<u8>) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     Ok(Response::new(full("Try POSTing data to /echo")))
 }
 
