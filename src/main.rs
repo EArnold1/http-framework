@@ -17,8 +17,85 @@ struct Player {
 }
 
 // Services
-async fn _hello(_: Request<hyper::body::Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {
-    Ok(Response::new(Full::new(Bytes::from("Hello, World!"))))
+//
+
+#[derive(Debug)]
+struct Route<'a> {
+    method: Method,
+    route: &'a str,
+    handler: fn(body: Vec<u8>) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error>,
+}
+
+impl<'a> Route<'a> {
+    fn new(
+        handler: fn(Vec<u8>) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error>,
+        method: Method,
+        route: &'a str,
+    ) -> Self {
+        Self {
+            method,
+            route,
+            handler,
+        }
+    }
+}
+
+struct Service<'a> {
+    routes: Vec<Route<'a>>,
+}
+
+impl<'a> Service<'a> {
+    fn new() -> Self {
+        Self { routes: Vec::new() }
+    }
+
+    fn route(&mut self, route: Route<'a>) {
+        self.routes.push(route);
+    }
+
+    async fn make_service(
+        &self,
+        req: Request<hyper::body::Incoming>,
+    ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+        let upper = req.body().size_hint().upper().unwrap_or(u64::MAX);
+        // max body size 64kb
+        if upper > 1024 * 64 {
+            let mut resp = Response::new(full("Body too big"));
+            *resp.status_mut() = hyper::StatusCode::PAYLOAD_TOO_LARGE;
+            return Ok(resp);
+        }
+
+        let route = self.routes.iter().find(|Route { method, route, .. }| {
+            method == *req.method() && *route == req.uri().path()
+        });
+
+        // Await the whole body to be collected into a single `Bytes`...
+        let body = req.collect().await?.to_bytes().to_vec();
+
+        if let Some(route) = route {
+            return (route.handler)(body);
+        }
+
+        let mut not_found = Response::new(empty());
+        *not_found.status_mut() = StatusCode::NOT_FOUND;
+        Ok(not_found)
+    }
+}
+
+async fn handler(
+    req: Request<hyper::body::Incoming>,
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    let mut router = Service::new();
+    router.route(Route::new(root, Method::GET, "/"));
+    // router.route(Method::POST, "/echo");
+    // router.route(Method::POST, "/echo/uppercase");
+    // router.route(Method::POST, "/echo/reversed");
+    //
+    router.make_service(req).await
+}
+
+fn root(_: Vec<u8>) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    Ok(Response::new(full("Try POSTing data to /echo")))
 }
 
 async fn echo(
@@ -109,7 +186,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             // Finally, we bind the incoming connection to our `hello` service
             if let Err(err) = http1::Builder::new()
                 // `service_fn` converts our function in a `Service`
-                .serve_connection(io, service_fn(echo))
+                .serve_connection(io, service_fn(handler))
                 .await
             {
                 eprintln!("Error serving connection: {:?}", err);
