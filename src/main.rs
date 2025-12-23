@@ -7,21 +7,23 @@ use hyper::body::{Body, Bytes, Frame};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, StatusCode};
-use hyper::{Request, Response};
+use hyper::{Request as BasRequest, Response};
 use hyper_util::rt::TokioIo;
-use serde::{Deserialize, Serialize};
+// use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 
-#[derive(Serialize, Deserialize, Debug)]
-struct Player {
-    name: String,
-}
+// #[derive(Serialize, Deserialize, Debug)]
+// struct Player {
+//     name: String,
+// }
 
-type BoxFutureResponse = Pin<
+type Request = BasRequest<hyper::body::Incoming>;
+
+type HandlerFuture = Pin<
     Box<dyn Future<Output = Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error>> + Send>,
 >;
 
-type HandlerFn = Box<dyn Fn(Vec<u8>) -> BoxFutureResponse + Send + Sync>;
+type HandlerFn = fn(Request) -> HandlerFuture;
 
 struct Route {
     method: Method,
@@ -30,23 +32,17 @@ struct Route {
 }
 
 impl Route {
-    fn new<H, Fut>(method: Method, route: &str, handler: H) -> Self
-    where
-        H: Fn(Vec<u8>) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error>>
-            + Send
-            + 'static,
-    {
+    fn new(method: Method, route: &str, handler: HandlerFn) -> Self {
         Self {
             method,
             route: route.into(),
-            handler: Box::new(move |body| Box::pin(handler(body))),
+            handler,
         }
     }
 }
 
 struct Service {
-    routes: Vec<Route>,
+    routes: Vec<Route>, // TODO: change to HashMap
 }
 
 impl Service {
@@ -60,25 +56,14 @@ impl Service {
 
     async fn make_service(
         &self,
-        req: Request<hyper::body::Incoming>,
+        req: Request,
     ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-        let upper = req.body().size_hint().upper().unwrap_or(u64::MAX);
-        // max body size 64kb
-        if upper > 1024 * 64 {
-            let mut resp = Response::new(full("Body too big"));
-            *resp.status_mut() = hyper::StatusCode::PAYLOAD_TOO_LARGE;
-            return Ok(resp);
-        }
-
         let route = self.routes.iter().find(|Route { method, route, .. }| {
             method == *req.method() && *route == req.uri().path()
         });
 
-        // Await the whole body to be collected into a single `Bytes`...
-        let body = req.collect().await?.to_bytes().to_vec();
-
         if let Some(route) = route {
-            return (route.handler)(body).await;
+            return (route.handler)(req).await;
         }
 
         let mut not_found = Response::new(empty());
@@ -87,75 +72,68 @@ impl Service {
     }
 }
 
-async fn handler(
-    req: Request<hyper::body::Incoming>,
-) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+async fn get_req_body(req: Request) -> Result<Option<Bytes>, hyper::Error> {
+    let upper = req.body().size_hint().upper().unwrap_or(u64::MAX);
+    // max body size 64kb
+    if upper > 1024 * 64 {
+        return Ok(None);
+    }
+
+    let body = req.collect().await?.to_bytes();
+    Ok(Some(body))
+}
+
+async fn handler(req: Request) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let mut router = Service::new();
     router.route(Route::new(Method::GET, "/", index_route));
-    // router.route(Method::POST, "/echo");
-    // router.route(Method::POST, "/echo/uppercase");
-    // router.route(Method::POST, "/echo/reversed");
+    router.route(Route::new(Method::POST, "/echo", echo));
+    router.route(Route::new(Method::POST, "/echo/uppercase", echo_uppercase));
+    router.route(Route::new(Method::POST, "/echo/reversed", echo_reversed));
     //
     router.make_service(req).await
 }
 
-async fn index_route(_: Vec<u8>) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-    Ok(Response::new(full("Try POSTing data to /echo")))
+fn index_route(_: Request) -> HandlerFuture {
+    Box::pin(async { Ok(Response::new(full("Try POSTing data to /echo"))) })
 }
 
-async fn echo(
-    req: Request<hyper::body::Incoming>,
-) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-    match (req.method(), req.uri().path()) {
-        (&Method::GET, "/") => Ok(Response::new(full("Try POSTing data to /echo"))),
-        (&Method::POST, "/echo") => Ok(Response::new(req.into_body().boxed())),
-        (&Method::POST, "/echo/uppercase") => {
-            // Map this body's frame to a different type
-            let frame_stream = req.into_body().map_frame(|frame| {
-                let frame = if let Ok(data) = frame.into_data() {
-                    // Convert every byte in every Data frame to uppercase
-                    data.iter()
-                        .map(|byte| byte.to_ascii_uppercase())
-                        .collect::<Bytes>()
-                } else {
-                    Bytes::new()
-                };
+fn echo(req: Request) -> HandlerFuture {
+    let body = req.into_body().boxed();
+    Box::pin(async { Ok(Response::new(body)) })
+}
 
-                Frame::data(frame)
-            });
+fn echo_uppercase(req: Request) -> HandlerFuture {
+    // Map this body's frame to a different type
+    let frame_stream = req.into_body().map_frame(|frame| {
+        let frame = if let Ok(data) = frame.into_data() {
+            // Convert every byte in every Data frame to uppercase
+            data.iter()
+                .map(|byte| byte.to_ascii_uppercase())
+                .collect::<Bytes>()
+        } else {
+            Bytes::new()
+        };
 
-            Ok(Response::new(frame_stream.boxed()))
-        }
-        (&Method::POST, "/echo/reversed") => {
-            // Protect our server from massive bodies.
-            let upper = req.body().size_hint().upper().unwrap_or(u64::MAX);
-            // max body size 64kb
-            if upper > 1024 * 64 {
+        Frame::data(frame)
+    });
+
+    Box::pin(async { Ok(Response::new(frame_stream.boxed())) })
+}
+
+fn echo_reversed(req: Request) -> HandlerFuture {
+    Box::pin(async move {
+        match get_req_body(req).await? {
+            Some(body) => {
+                let reversed_body = body.iter().rev().cloned().collect::<Vec<u8>>();
+                Ok(Response::new(full(reversed_body)))
+            }
+            None => {
                 let mut resp = Response::new(full("Body too big"));
                 *resp.status_mut() = hyper::StatusCode::PAYLOAD_TOO_LARGE;
-                return Ok(resp);
+                Ok(resp)
             }
-
-            // Await the whole body to be collected into a single `Bytes`...
-            let whole_body = req.collect().await?.to_bytes().to_vec();
-
-            let deserialized_struct: Player = serde_json::from_slice(&whole_body).unwrap();
-
-            println!("{deserialized_struct:?}");
-
-            // Iterate the whole body in reverse order and collect into a new Vec.
-            let reversed_body = whole_body.iter().rev().cloned().collect::<Vec<u8>>();
-
-            Ok(Response::new(full(reversed_body)))
         }
-
-        // Return 404 Not Found for other routes.
-        _ => {
-            let mut not_found = Response::new(empty());
-            *not_found.status_mut() = StatusCode::NOT_FOUND;
-            Ok(not_found)
-        }
-    }
+    })
 }
 
 // We create some utility functions to make Empty and Full bodies
