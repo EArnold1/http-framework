@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -7,7 +8,7 @@ use hyper::body::{Body, Bytes, Frame};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, StatusCode};
-use hyper::{Request as BasRequest, Response};
+use hyper::{Request as BaseRequest, Response};
 use hyper_util::rt::TokioIo;
 // use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
@@ -17,12 +18,14 @@ use tokio::net::TcpListener;
 //     name: String,
 // }
 
-type Request = BasRequest<hyper::body::Incoming>;
+type Request = BaseRequest<hyper::body::Incoming>;
 
 type HandlerFuture = Pin<
     Box<dyn Future<Output = Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error>> + Send>,
 >;
 
+/// Using function pointer here
+/// This can easily be a `trait object` with Fn, With trait objects the `route_handlers` can be async functions or closures
 type HandlerFn = fn(Request) -> HandlerFuture;
 
 struct Route {
@@ -42,33 +45,36 @@ impl Route {
 }
 
 struct Service {
-    routes: Vec<Route>, // TODO: change to HashMap
+    routes: HashMap<(Method, String), HandlerFn>,
 }
 
 impl Service {
     fn new() -> Self {
-        Self { routes: Vec::new() }
+        Self {
+            routes: HashMap::new(),
+        }
     }
 
     fn route(&mut self, route: Route) {
-        self.routes.push(route);
+        self.routes
+            .insert((route.method, route.route), route.handler);
     }
 
     async fn make_service(
         &self,
         req: Request,
     ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-        let route = self.routes.iter().find(|Route { method, route, .. }| {
-            method == *req.method() && *route == req.uri().path()
-        });
+        let method = req.method().clone();
+        let key = (method, req.uri().path().to_owned());
 
-        if let Some(route) = route {
-            return (route.handler)(req).await;
+        match self.routes.get(&key) {
+            Some(handler) => (handler)(req).await,
+            None => {
+                let mut not_found = Response::new(empty());
+                *not_found.status_mut() = StatusCode::NOT_FOUND;
+                Ok(not_found)
+            }
         }
-
-        let mut not_found = Response::new(empty());
-        *not_found.status_mut() = StatusCode::NOT_FOUND;
-        Ok(not_found)
     }
 }
 
