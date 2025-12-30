@@ -1,11 +1,12 @@
 use http_body_util::BodyExt;
 use hyper::Method;
 use hyper::body::{Bytes, Frame};
-use hyper_api::api::{HandlerFuture, Request, Response};
+use hyper_api::api::{HandlerFuture, Request};
 use hyper_api::components::route::Route;
 use hyper_api::components::router::Router;
 use hyper_api::components::service::Service;
-use hyper_api::utils::{full, get_req_body};
+use hyper_api::error::LibError;
+use hyper_api::utils::{create_response_body, full, get_req_body};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -14,12 +15,12 @@ struct Player {
 }
 
 fn index_route(_: Request) -> HandlerFuture {
-    Box::pin(async { Ok(Response::new(full("Try POSTing data to /echo"))) })
+    Box::pin(async { Ok(create_response_body(full("Try POSTing data to /echo"))) })
 }
 
 fn echo(req: Request) -> HandlerFuture {
-    let body = req.into_body().boxed();
-    Box::pin(async { Ok(Response::new(body)) })
+    let body = req.into_body();
+    Box::pin(async { Ok(create_response_body(body)) })
 }
 
 fn echo_uppercase(req: Request) -> HandlerFuture {
@@ -37,46 +38,33 @@ fn echo_uppercase(req: Request) -> HandlerFuture {
         Frame::data(frame)
     });
 
-    Box::pin(async { Ok(Response::new(frame_stream.boxed())) })
+    let body = create_response_body(frame_stream);
+
+    Box::pin(async { Ok(body) })
 }
 
 fn echo_reversed(req: Request) -> HandlerFuture {
     Box::pin(async move {
-        match get_req_body(req).await? {
-            Some(body) => {
-                let reversed_body = body.iter().rev().cloned().collect::<Vec<u8>>();
-                Ok(Response::new(full(reversed_body)))
-            }
-            None => {
-                let mut resp = Response::new(full("Body too big"));
-                *resp.status_mut() = hyper::StatusCode::PAYLOAD_TOO_LARGE;
-                Ok(resp)
-            }
-        }
+        let body = get_req_body(req).await?;
+        let reversed_body = body.iter().rev().cloned().collect::<Vec<u8>>();
+        Ok(create_response_body(full(reversed_body)))
     })
 }
 
 fn create_player(req: Request) -> HandlerFuture {
     Box::pin(async move {
-        match get_req_body(req).await? {
-            Some(body) => {
-                let player: Player = serde_json::from_slice(&body).unwrap();
+        let body = get_req_body(req).await?;
 
-                println!("{player:?}");
+        let player: Player = serde_json::from_slice(&body).unwrap();
 
-                Ok(Response::new(full("Player added")))
-            }
-            None => {
-                let mut resp = Response::new(full("Body too big"));
-                *resp.status_mut() = hyper::StatusCode::PAYLOAD_TOO_LARGE;
-                Ok(resp)
-            }
-        }
+        println!("{player:?}");
+
+        Ok(create_response_body(full("Player added")))
     })
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn main() -> Result<(), LibError> {
     let mut router = Router::default();
     router.route(Route::new(Method::GET, "/", index_route));
     router.route(Route::new(Method::POST, "/echo", echo));

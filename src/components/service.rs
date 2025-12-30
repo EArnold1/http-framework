@@ -4,7 +4,10 @@ use hyper::{server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 
-use crate::api::{HandlerReturn, Request};
+use crate::{
+    api::{HandlerReturn, Request},
+    error::LibError,
+};
 
 #[derive(Debug, Clone)]
 pub struct Service {
@@ -21,10 +24,7 @@ impl Service {
         }
     }
 
-    pub async fn run<H, Fut>(
-        &self,
-        handler: H,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    pub async fn run<H, Fut>(&self, handler: H) -> Result<(), LibError>
     where
         H: Fn(Request) -> Fut + Clone + Send + Sync + 'static,
         Fut: Future<Output = HandlerReturn> + Send + 'static,
