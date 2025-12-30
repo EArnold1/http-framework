@@ -55,7 +55,10 @@ fn create_player(req: Request) -> HandlerFuture {
     Box::pin(async move {
         let body = get_req_body(req).await?;
 
-        let player: Player = serde_json::from_slice(&body).unwrap();
+        let player: Player = match serde_json::from_slice(&body) {
+            Ok(data) => data,
+            Err(e) => return Err(LibError::JsonParseError(e)),
+        };
 
         println!("{player:?}");
 

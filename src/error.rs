@@ -10,4 +10,7 @@ pub enum LibError {
 
     #[error("An error occurred in the standard library: {0}")]
     Std(#[from] std::io::Error),
+
+    #[error("Failed to parse JSON payload")]
+    JsonParseError(#[from] serde_json::Error),
 }

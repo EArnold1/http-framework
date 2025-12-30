@@ -6,10 +6,10 @@ use crate::{
     error::LibError,
 };
 
-const MAX_BODY_SIZE: u64 = 1024 * 64; // 64kb
+const MAX_BODY_SIZE: usize = 1024 * 64; // 64kb
 
 pub async fn get_req_body(mut req: Request) -> Result<Bytes, LibError> {
-    let body = Limited::new(req.body_mut(), MAX_BODY_SIZE as usize)
+    let body = Limited::new(req.body_mut(), MAX_BODY_SIZE)
         .collect() // Possible because of the `BodyExt` trait
         .await
         .map_err(|_| LibError::RequestBodyTooLarge)?
