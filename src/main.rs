@@ -6,7 +6,7 @@ use hyper_api::components::route::Route;
 use hyper_api::components::router::Router;
 use hyper_api::components::service::Service;
 use hyper_api::error::LibError;
-use hyper_api::utils::{create_response_body, full, get_req_body};
+use hyper_api::utils::{create_response_body, full, get_req_body, json_response};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -62,7 +62,7 @@ fn create_player(req: Request) -> HandlerFuture {
 
         println!("{player:?}");
 
-        Ok(create_response_body(full("Player added")))
+        json_response(player)
     })
 }
 

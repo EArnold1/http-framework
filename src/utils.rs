@@ -1,5 +1,10 @@
 use http_body_util::{BodyExt, Empty, Full, Limited, combinators::BoxBody};
-use hyper::body::Bytes;
+use hyper::{
+    StatusCode,
+    body::Bytes,
+    header::{CONTENT_TYPE, HeaderValue},
+};
+use serde::Serialize;
 
 use crate::{
     api::{Request, Response},
@@ -41,4 +46,25 @@ where
     T::Error: Into<LibError>, // Tells the compiler that it can convert `T::Error` to `LibError`
 {
     Response::new(body.map_err(Into::into).boxed())
+}
+
+// TODO: create a JSON response builder
+
+/// Create a JSON response body
+pub fn json_response<T>(body: T) -> Result<Response<BoxBody<Bytes, LibError>>, LibError>
+where
+    T: Serialize,
+{
+    let json_string = serde_json::to_string(&body)?;
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(
+            CONTENT_TYPE,
+            "application/json"
+                .parse::<HeaderValue>()
+                .expect("Failed to parse content type"),
+        )
+        .body(full(json_string))
+        .map_err(LibError::Http)
 }
