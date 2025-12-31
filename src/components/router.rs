@@ -14,6 +14,7 @@ pub struct Router {
 }
 
 impl Router {
+    /// Add a route to the router.
     pub fn route(&mut self, route: Route) {
         // We need to get mutable access to the HashMap inside Arc.
         // NOTE: since this is single-threaded we can do this
@@ -22,6 +23,7 @@ impl Router {
             .insert((route.method, route.route), route.handler);
     }
 
+    /// Handle a request by matching it to a route handler.
     pub async fn make_service(&self, req: Request) -> HandlerReturn {
         let key = (req.method().clone(), req.uri().path().to_owned());
 

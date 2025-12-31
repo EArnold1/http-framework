@@ -6,8 +6,10 @@ use crate::{
     error::LibError,
 };
 
-const MAX_BODY_SIZE: usize = 1024 * 64; // 64kb
+/// Maximum allowed request body size (64 KB)
+const MAX_BODY_SIZE: usize = 1024 * 64;
 
+/// Reads and returns the full request body as bytes, enforcing a maximum size.
 pub async fn get_req_body(mut req: Request) -> Result<Bytes, LibError> {
     let body = Limited::new(req.body_mut(), MAX_BODY_SIZE)
         .collect() // Possible because of the `BodyExt` trait
@@ -18,18 +20,21 @@ pub async fn get_req_body(mut req: Request) -> Result<Bytes, LibError> {
     Ok(body)
 }
 
-// From hyper documentation
+/// Returns an empty response body.
 pub fn empty() -> BoxBody<Bytes, LibError> {
     Empty::<Bytes>::new()
         .map_err(|never| match never {})
         .boxed()
 }
+
+/// A function to create a body with data
 pub fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, LibError> {
     Full::new(chunk.into())
         .map_err(|never| match never {})
         .boxed()
 }
 
+/// Creates a response body from the given data.
 pub fn create_response_body<T>(body: T) -> Response<BoxBody<Bytes, LibError>>
 where
     T: http_body_util::BodyExt<Data = Bytes> + Send + Sync + 'static,

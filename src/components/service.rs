@@ -24,14 +24,13 @@ impl Service {
         }
     }
 
+    /// Run the HTTP server and handle incoming connections.
     pub async fn run<H, Fut>(&self, handler: H) -> Result<(), LibError>
     where
         H: Fn(Request) -> Fut + Clone + Send + Sync + 'static,
         Fut: Future<Output = HandlerReturn> + Send + 'static,
     {
-        let listener = TcpListener::bind(self.addr)
-            .await
-            .expect("Port not available");
+        let listener = TcpListener::bind(self.addr).await?;
 
         loop {
             let (stream, _) = listener.accept().await?;

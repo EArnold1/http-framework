@@ -1,13 +1,19 @@
 [package]
+authors = [
+"Arnold Emmanuel <arnoldemmanuel15@gmail.com>" # https://github.com/EArnold1
+]
+license = "MIT"
+description = "A minimal, modular HTTP web framework built on Hyper, providing routing, and async utilities for building Rust APIs."
+repository = "https://github.com/EArnold1/http-framework"
 name = "hyper_api"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-hyper = { version = "1", features = ["full"] }
-tokio = { version = "1", features = ["full"] }
+hyper = { version = "1", features = ["server", "http1", "http2"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
 http-body-util = "0.1"
-hyper-util = { version = "0.1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["server", "server-auto", "tokio"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.146"
 thiserror = "2.0.17"

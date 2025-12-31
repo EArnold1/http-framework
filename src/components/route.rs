@@ -9,6 +9,7 @@ pub struct Route {
 }
 
 impl Route {
+    /// Create a new route with method, path, and handler.
     pub fn new(method: Method, route: &str, handler: HandlerFn) -> Self {
         Self {
             method,
