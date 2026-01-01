@@ -1,26 +1,29 @@
-use http_body_util::combinators::BoxBody;
-use hyper::body::Bytes;
-use hyper::header::{CONTENT_TYPE, HeaderName, HeaderValue};
-use hyper::{HeaderMap, Request as BaseRequest, Response as BaseResponse, StatusCode};
-use serde::Serialize;
-use std::pin::Pin;
-
 use crate::error::LibError;
-use crate::utils::full;
+use http_body_util::{BodyExt, Empty, Full, combinators::BoxBody};
+use hyper::{
+    HeaderMap, Response as BaseResponse, StatusCode,
+    body::Bytes,
+    header::{CONTENT_TYPE, HeaderName, HeaderValue},
+};
+use serde::Serialize;
 
 pub type ApiResponse<T> = BaseResponse<T>;
 
-pub type ApiRequest = BaseRequest<hyper::body::Incoming>;
+pub type BodyResponse = ApiResponse<BoxBody<Bytes, LibError>>;
 
-type BodyResponse = ApiResponse<BoxBody<Bytes, LibError>>;
+/// Returns an empty response body.
+pub fn empty() -> BoxBody<Bytes, LibError> {
+    Empty::<Bytes>::new()
+        .map_err(|never| match never {})
+        .boxed()
+}
 
-pub type HandlerResult = Result<BodyResponse, LibError>;
-
-pub type HandlerFuture = Pin<Box<dyn Future<Output = Result<BodyResponse, LibError>> + Send>>;
-
-/// Using function pointer here
-/// This can easily be a `trait object` with Fn, With trait objects the `route_handlers` can be async functions or closures
-pub type ApiHandlerFn = fn(ApiRequest) -> HandlerFuture;
+/// A function to create a body with data
+pub fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, LibError> {
+    Full::new(chunk.into())
+        .map_err(|never| match never {})
+        .boxed()
+}
 
 /// Builder for creating HTTP responses.
 pub struct HttpResponse {}

@@ -4,17 +4,14 @@ use hyper::{server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 
-use crate::{
-    api::{ApiRequest, HandlerResult},
-    error::LibError,
-};
+use crate::{error::LibError, request::ApiRequest, route::HandlerResult};
 
 #[derive(Debug, Clone)]
-pub struct Service {
+pub struct Server {
     addr: SocketAddr,
 }
 
-impl Service {
+impl Server {
     pub fn init<I>(addr: (I, u16)) -> Self
     where
         I: Into<IpAddr>,

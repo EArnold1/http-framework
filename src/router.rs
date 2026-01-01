@@ -1,11 +1,12 @@
 use std::{collections::HashMap, sync::Arc};
 
-use hyper::{Method, Response, StatusCode};
+use http_body_util::BodyExt;
+use hyper::{Method, StatusCode};
 
 use crate::{
-    api::{ApiHandlerFn, ApiRequest, HandlerResult},
-    components::route::Route,
-    utils::empty,
+    request::ApiRequest,
+    response::{HttpResponse, empty},
+    route::{ApiHandlerFn, HandlerResult, Route},
 };
 
 #[derive(Clone, Default)]
@@ -30,9 +31,10 @@ impl Router {
         match self.routes.get(&key) {
             Some(handler) => (handler)(req).await,
             None => {
-                let mut not_found = Response::new(empty());
-                *not_found.status_mut() = StatusCode::NOT_FOUND;
-                Ok(not_found)
+                let body = empty().collect().await?.to_bytes();
+                HttpResponse::builder()
+                    .status_code(StatusCode::NOT_FOUND)
+                    .body(body)
             }
         }
     }

@@ -1,12 +1,12 @@
 use http_body_util::BodyExt;
 use hyper::body::{Bytes, Frame};
 use hyper::{Method, StatusCode};
-use hyper_api::api::{ApiRequest, HandlerFuture, HttpResponse};
-use hyper_api::components::route::Route;
-use hyper_api::components::router::Router;
-use hyper_api::components::service::Service;
 use hyper_api::error::LibError;
-use hyper_api::utils::get_req_body;
+use hyper_api::request::{ApiRequest, get_req_body};
+use hyper_api::response::HttpResponse;
+use hyper_api::route::{HandlerFuture, Route};
+use hyper_api::router::Router;
+use hyper_api::server::Server;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -48,18 +48,18 @@ fn echo_uppercase(req: ApiRequest) -> HandlerFuture {
     })
 }
 
-fn echo_reversed(req: ApiRequest) -> HandlerFuture {
+fn echo_reversed(mut req: ApiRequest) -> HandlerFuture {
     Box::pin(async move {
-        let body = get_req_body(req).await?;
+        let body = get_req_body(&mut req).await?;
         let reversed_body = body.iter().rev().cloned().collect::<Vec<u8>>();
 
         HttpResponse::builder().body(reversed_body)
     })
 }
 
-fn create_player(req: ApiRequest) -> HandlerFuture {
+fn create_player(mut req: ApiRequest) -> HandlerFuture {
     Box::pin(async move {
-        let body = get_req_body(req).await?;
+        let body = get_req_body(&mut req).await?;
 
         let player: Player = match serde_json::from_slice(&body) {
             Ok(data) => data,
@@ -83,7 +83,7 @@ async fn main() -> Result<(), LibError> {
     router.route(Route::new(Method::POST, "/echo/reversed", echo_reversed));
     router.route(Route::new(Method::POST, "/player", create_player));
 
-    Service::init(([127, 0, 0, 1], 3000))
+    Server::init(([127, 0, 0, 1], 3000))
         .run(move |req| {
             let router = router.clone();
             async move { router.make_service(req).await }
