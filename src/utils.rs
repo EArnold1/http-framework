@@ -1,15 +1,7 @@
 use http_body_util::{BodyExt, Empty, Full, Limited, combinators::BoxBody};
-use hyper::{
-    StatusCode,
-    body::Bytes,
-    header::{CONTENT_TYPE, HeaderValue},
-};
-use serde::Serialize;
+use hyper::body::Bytes;
 
-use crate::{
-    api::{Request, Response},
-    error::LibError,
-};
+use crate::{api::Request, error::LibError};
 
 /// Maximum allowed request body size (64 KB)
 const MAX_BODY_SIZE: usize = 1024 * 64;
@@ -37,34 +29,4 @@ pub fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, LibError> {
     Full::new(chunk.into())
         .map_err(|never| match never {})
         .boxed()
-}
-
-/// Creates a response body from the given data.
-pub fn create_response_body<T>(body: T) -> Response<BoxBody<Bytes, LibError>>
-where
-    T: http_body_util::BodyExt<Data = Bytes> + Send + Sync + 'static,
-    T::Error: Into<LibError>, // Tells the compiler that it can convert `T::Error` to `LibError`
-{
-    Response::new(body.map_err(Into::into).boxed())
-}
-
-// TODO: create a JSON response builder
-
-/// Create a JSON response body
-pub fn json_response<T>(body: T) -> Result<Response<BoxBody<Bytes, LibError>>, LibError>
-where
-    T: Serialize,
-{
-    let json_string = serde_json::to_string(&body)?;
-
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(
-            CONTENT_TYPE,
-            "application/json"
-                .parse::<HeaderValue>()
-                .expect("Failed to parse content type"),
-        )
-        .body(full(json_string))
-        .map_err(LibError::Http)
 }

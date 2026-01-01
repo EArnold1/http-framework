@@ -1,12 +1,12 @@
 use http_body_util::BodyExt;
-use hyper::Method;
 use hyper::body::{Bytes, Frame};
-use hyper_api::api::{HandlerFuture, Request};
+use hyper::{Method, StatusCode};
+use hyper_api::api::{HandlerFuture, HttpResponse, Request};
 use hyper_api::components::route::Route;
 use hyper_api::components::router::Router;
 use hyper_api::components::service::Service;
 use hyper_api::error::LibError;
-use hyper_api::utils::{create_response_body, full, get_req_body, json_response};
+use hyper_api::utils::get_req_body;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -15,12 +15,15 @@ struct Player {
 }
 
 fn index_route(_: Request) -> HandlerFuture {
-    Box::pin(async { Ok(create_response_body(full("Try POSTing data to /echo"))) })
+    Box::pin(async { HttpResponse::builder().body("Try POSTing data to /echo") })
 }
 
 fn echo(req: Request) -> HandlerFuture {
-    let body = req.into_body();
-    Box::pin(async { Ok(create_response_body(body)) })
+    Box::pin(async {
+        let body = req.into_body().collect().await?.to_bytes();
+
+        HttpResponse::builder().body(body)
+    })
 }
 
 fn echo_uppercase(req: Request) -> HandlerFuture {
@@ -38,16 +41,19 @@ fn echo_uppercase(req: Request) -> HandlerFuture {
         Frame::data(frame)
     });
 
-    let body = create_response_body(frame_stream);
+    Box::pin(async {
+        let data = frame_stream.collect().await?.to_bytes();
 
-    Box::pin(async { Ok(body) })
+        HttpResponse::builder().body(data)
+    })
 }
 
 fn echo_reversed(req: Request) -> HandlerFuture {
     Box::pin(async move {
         let body = get_req_body(req).await?;
         let reversed_body = body.iter().rev().cloned().collect::<Vec<u8>>();
-        Ok(create_response_body(full(reversed_body)))
+
+        HttpResponse::builder().body(reversed_body)
     })
 }
 
@@ -62,7 +68,9 @@ fn create_player(req: Request) -> HandlerFuture {
 
         println!("{player:?}");
 
-        json_response(player)
+        HttpResponse::builder()
+            .status_code(StatusCode::CREATED)
+            .json(&player)
     })
 }
 
