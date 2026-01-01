@@ -12,28 +12,30 @@ A minimal, modular HTTP web framework built on Hyper, providing routing, and asy
 ## Example
 
 ```rust
-use hyper_api::api::{HandlerFuture, Request, Response};
-use hyper_api::components::route::Route;
-use hyper_api::components::router::Router;
-use hyper_api::components::service::Service;
-use hyper_api::utils::full;
+use hyper_api::request::ApiRequest;
+use hyper_api::response::HttpResponse;
+use hyper_api::route::{HandlerFuture, Route};
+use hyper_api::router::Router;
+use hyper_api::server::Server;
+use hyper_api::error::LibError;
 use hyper::Method;
 
-fn index_route(_: Request) -> HandlerFuture {
-    Box::pin(async { Ok(Response::new(full("Hello, world!"))) })
+ fn index_route(_req: ApiRequest) -> HttpResponse {
+    Box::pin(async { HttpResponse::builder().body("Hello from the server") })
 }
 
 #[tokio::main]
-async fn main() -> Result<(), hyper_api::error::LibError> {
-    let mut router = Router::default();
-    router.route(Route::new(Method::GET, "/", index_route));
+async fn main() -> Result<(), LibError> {
+    let mut router = Router::new();
+    router.add(Route::new(Method::GET, "/", index_route));
 
-    Service::init(([127, 0, 0, 1], 3000))
+    Server::init(([127, 0, 0, 1], 3000))
         .run(move |req| {
             let router = router.clone();
             async move { router.make_service(req).await }
         })
         .await?;
+
     Ok(())
 }
 ```
