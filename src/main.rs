@@ -1,7 +1,7 @@
 use http_body_util::BodyExt;
 use hyper::body::{Bytes, Frame};
 use hyper::{Method, StatusCode};
-use hyper_api::api::{HandlerFuture, HttpResponse, Request};
+use hyper_api::api::{ApiRequest, HandlerFuture, HttpResponse};
 use hyper_api::components::route::Route;
 use hyper_api::components::router::Router;
 use hyper_api::components::service::Service;
@@ -14,11 +14,11 @@ struct Player {
     name: String,
 }
 
-fn index_route(_: Request) -> HandlerFuture {
+fn index_route(_: ApiRequest) -> HandlerFuture {
     Box::pin(async { HttpResponse::builder().body("Try POSTing data to /echo") })
 }
 
-fn echo(req: Request) -> HandlerFuture {
+fn echo(req: ApiRequest) -> HandlerFuture {
     Box::pin(async {
         let body = req.into_body().collect().await?.to_bytes();
 
@@ -26,7 +26,7 @@ fn echo(req: Request) -> HandlerFuture {
     })
 }
 
-fn echo_uppercase(req: Request) -> HandlerFuture {
+fn echo_uppercase(req: ApiRequest) -> HandlerFuture {
     // Map this body's frame to a different type
     let frame_stream = req.into_body().map_frame(|frame| {
         let frame = if let Ok(data) = frame.into_data() {
@@ -48,7 +48,7 @@ fn echo_uppercase(req: Request) -> HandlerFuture {
     })
 }
 
-fn echo_reversed(req: Request) -> HandlerFuture {
+fn echo_reversed(req: ApiRequest) -> HandlerFuture {
     Box::pin(async move {
         let body = get_req_body(req).await?;
         let reversed_body = body.iter().rev().cloned().collect::<Vec<u8>>();
@@ -57,7 +57,7 @@ fn echo_reversed(req: Request) -> HandlerFuture {
     })
 }
 
-fn create_player(req: Request) -> HandlerFuture {
+fn create_player(req: ApiRequest) -> HandlerFuture {
     Box::pin(async move {
         let body = get_req_body(req).await?;
 

@@ -8,19 +8,19 @@ use std::pin::Pin;
 use crate::error::LibError;
 use crate::utils::full;
 
-pub type Response<T> = BaseResponse<T>;
+pub type ApiResponse<T> = BaseResponse<T>;
 
-pub type Request = BaseRequest<hyper::body::Incoming>;
+pub type ApiRequest = BaseRequest<hyper::body::Incoming>;
 
-type PayloadData = Response<BoxBody<Bytes, LibError>>;
+type BodyResponse = ApiResponse<BoxBody<Bytes, LibError>>;
 
-pub type HandlerReturn = Result<PayloadData, LibError>;
+pub type HandlerResult = Result<BodyResponse, LibError>;
 
-pub type HandlerFuture = Pin<Box<dyn Future<Output = Result<PayloadData, LibError>> + Send>>;
+pub type HandlerFuture = Pin<Box<dyn Future<Output = Result<BodyResponse, LibError>> + Send>>;
 
 /// Using function pointer here
 /// This can easily be a `trait object` with Fn, With trait objects the `route_handlers` can be async functions or closures
-pub type HandlerFn = fn(Request) -> HandlerFuture;
+pub type ApiHandlerFn = fn(ApiRequest) -> HandlerFuture;
 
 /// Builder for creating HTTP responses.
 pub struct HttpResponse {}
@@ -83,13 +83,13 @@ impl HttpResponseBuilder {
     ///
     /// # Errors
     /// Returns `LibError` if serialization fails.
-    pub fn json<T>(mut self, body: &T) -> Result<PayloadData, LibError>
+    pub fn json<T>(mut self, body: &T) -> Result<BodyResponse, LibError>
     where
         T: ?Sized + Serialize,
     {
         let json_string = serde_json::to_string(body)?;
 
-        let mut response = Response::new(full(json_string));
+        let mut response = ApiResponse::new(full(json_string));
 
         // setting the CONTENT_TYPE to avoid wrong content type for JSON if it was previously set
         self.headers
@@ -108,11 +108,11 @@ impl HttpResponseBuilder {
     ///
     /// # Errors
     /// Returns `LibError` if an error occurs.
-    pub fn body<T>(self, body: T) -> Result<PayloadData, LibError>
+    pub fn body<T>(self, body: T) -> Result<BodyResponse, LibError>
     where
         T: Into<Bytes>,
     {
-        let mut response = Response::new(full(body));
+        let mut response = ApiResponse::new(full(body));
 
         *response.status_mut() = self.status;
         *response.headers_mut() = self.headers;

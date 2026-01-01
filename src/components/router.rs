@@ -3,14 +3,14 @@ use std::{collections::HashMap, sync::Arc};
 use hyper::{Method, Response, StatusCode};
 
 use crate::{
-    api::{HandlerFn, HandlerReturn, Request},
+    api::{ApiHandlerFn, ApiRequest, HandlerResult},
     components::route::Route,
     utils::empty,
 };
 
 #[derive(Clone, Default)]
 pub struct Router {
-    routes: Arc<HashMap<(Method, String), HandlerFn>>,
+    routes: Arc<HashMap<(Method, String), ApiHandlerFn>>,
 }
 
 impl Router {
@@ -24,7 +24,7 @@ impl Router {
     }
 
     /// Handle a request by matching it to a route handler.
-    pub async fn make_service(&self, req: Request) -> HandlerReturn {
+    pub async fn make_service(&self, req: ApiRequest) -> HandlerResult {
         let key = (req.method().clone(), req.uri().path().to_owned());
 
         match self.routes.get(&key) {

@@ -5,7 +5,7 @@ use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 
 use crate::{
-    api::{HandlerReturn, Request},
+    api::{ApiRequest, HandlerResult},
     error::LibError,
 };
 
@@ -27,8 +27,8 @@ impl Service {
     /// Run the HTTP server and handle incoming connections.
     pub async fn run<H, Fut>(&self, handler: H) -> Result<(), LibError>
     where
-        H: Fn(Request) -> Fut + Clone + Send + Sync + 'static,
-        Fut: Future<Output = HandlerReturn> + Send + 'static,
+        H: Fn(ApiRequest) -> Fut + Clone + Send + Sync + 'static,
+        Fut: Future<Output = HandlerResult> + Send + 'static,
     {
         let listener = TcpListener::bind(self.addr).await?;
 
