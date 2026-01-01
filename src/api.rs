@@ -22,21 +22,26 @@ pub type HandlerFuture = Pin<Box<dyn Future<Output = Result<PayloadData, LibErro
 /// This can easily be a `trait object` with Fn, With trait objects the `route_handlers` can be async functions or closures
 pub type HandlerFn = fn(Request) -> HandlerFuture;
 
-/// Creates a http response with a builder
+/// Builder for creating HTTP responses.
 pub struct HttpResponse {}
 
 impl HttpResponse {
+    /// Returns a new `HttpResponseBuilder` for constructing a response.
     pub fn builder() -> HttpResponseBuilder {
         HttpResponseBuilder::default()
     }
 }
 
+/// Builder for customizing HTTP response status and headers.
 pub struct HttpResponseBuilder {
+    /// The HTTP status code for the response.
     status: StatusCode,
+    /// The headers to include in the response.
     headers: HeaderMap,
 }
 
 impl Default for HttpResponseBuilder {
+    /// Creates a default `HttpResponseBuilder` with status 200 OK and empty headers.
     fn default() -> Self {
         Self {
             status: StatusCode::OK,
@@ -46,23 +51,39 @@ impl Default for HttpResponseBuilder {
 }
 
 impl HttpResponseBuilder {
-    /// Set status code
+    /// Sets the HTTP status code for the response.
+    ///
+    /// # Arguments
+    /// * `status` - The desired HTTP status code.
     pub fn status_code(mut self, status: StatusCode) -> Self {
         self.status = status;
 
         self
     }
 
-    /// Add header
-    pub fn header(mut self, (header_name, header_value): (HeaderName, &'static str)) -> Self {
-        self.headers
-            .insert(header_name, HeaderValue::from_static(header_value));
+    /// Adds a header to the response.
+    ///
+    /// # Arguments
+    /// * `(header_name, header_value)` - The header name and value to add.
+    pub fn header(
+        mut self,
+        (header_name, header_value): (HeaderName, impl Into<HeaderValue>),
+    ) -> Self {
+        let value = HeaderValue::try_from(header_value).expect("Invalid header value");
+
+        self.headers.insert(header_name, value);
 
         self
     }
 
-    /// Create a JSON response body
-    pub fn json<T>(&mut self, body: &T) -> Result<PayloadData, LibError>
+    /// Creates a JSON response body from a serializable object and sets the `CONTENT_TYPE`.
+    ///
+    /// # Arguments
+    /// * `body` - The object to serialize as JSON.
+    ///
+    /// # Errors
+    /// Returns `LibError` if serialization fails.
+    pub fn json<T>(mut self, body: &T) -> Result<PayloadData, LibError>
     where
         T: ?Sized + Serialize,
     {
@@ -70,33 +91,31 @@ impl HttpResponseBuilder {
 
         let mut response = Response::new(full(json_string));
 
+        // setting the CONTENT_TYPE to avoid wrong content type for JSON if it was previously set
         self.headers
             .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
-        let headers = self.headers.clone();
-
         *response.status_mut() = self.status;
-
-        *response.headers_mut() = headers;
+        *response.headers_mut() = self.headers;
 
         Ok(response)
     }
 
-    /// Create a response body
-    pub fn body<T>(&mut self, body: T) -> Result<PayloadData, LibError>
+    /// Creates a plain text response body.
+    ///
+    /// # Arguments
+    /// * `body` - The body content to include in the response.
+    ///
+    /// # Errors
+    /// Returns `LibError` if an error occurs.
+    pub fn body<T>(self, body: T) -> Result<PayloadData, LibError>
     where
         T: Into<Bytes>,
     {
         let mut response = Response::new(full(body));
 
-        self.headers
-            .insert(CONTENT_TYPE, HeaderValue::from_static("text/plain"));
-
-        let headers = self.headers.clone();
-
         *response.status_mut() = self.status;
-
-        *response.headers_mut() = headers;
+        *response.headers_mut() = self.headers;
 
         Ok(response)
     }
